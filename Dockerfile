@@ -1,5 +1,5 @@
-FROM nvidia/cuda
+FROM nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04
 WORKDIR /app
 COPY . /app
 RUN make
-ENTRYPOINT ["./darknet", "detector", "train", "/opt/ml/input/data/config/obj.data", "/opt/ml/input/data/config/yolov3-custom.cfg"]
+ENTRYPOINT ["./train.sh"]

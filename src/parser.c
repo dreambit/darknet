@@ -805,6 +805,7 @@ network parse_network_cfg_custom(char *filename, int batch)
         l.stopbackward = option_find_int_quiet(options, "stopbackward", 0);
         l.dontload = option_find_int_quiet(options, "dontload", 0);
         l.dontloadscales = option_find_int_quiet(options, "dontloadscales", 0);
+        l.learning_rate_scale = option_find_float_quiet(options, "learning_rate", 1);
         option_unused(options);
         net.layers[count] = l;
         if (l.workspace_size > workspace_size) workspace_size = l.workspace_size;
@@ -1190,7 +1191,9 @@ void load_weights_upto(network *net, char *filename, int cutoff)
     }
     else {
         printf("\n seen 32 \n");
-        fread(net->seen, sizeof(int), 1, fp);
+        uint32_t iseen = 0;
+        fread(&iseen, sizeof(uint32_t), 1, fp);
+        *net->seen = iseen;
     }
     int transpose = (major > 1000) || (minor > 1000);
 

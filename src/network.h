@@ -21,7 +21,7 @@ typedef struct network{
     float *workspace;
     int n;
     int batch;
-	int *seen;
+	uint64_t *seen;
     float epoch;
     int subdivisions;
     float momentum;
@@ -145,6 +145,7 @@ YOLODLL_API void reset_rnn(network *net);
 YOLODLL_API network *load_network_custom(char *cfg, char *weights, int clear, int batch);
 YOLODLL_API network *load_network(char *cfg, char *weights, int clear);
 YOLODLL_API float *network_predict_image(network *net, image im);
+YOLODLL_API float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float thresh_calc_avg_iou, const float iou_thresh, network *existing_net);
 YOLODLL_API void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map);
 YOLODLL_API int network_width(network *net);
 YOLODLL_API int network_height(network *net);
@@ -155,6 +156,7 @@ int get_network_nuisance(network net);
 int get_network_background(network net);
 YOLODLL_API void fuse_conv_batchnorm(network net);
 YOLODLL_API void calculate_binary_weights(network net);
+network combine_train_valid_networks(network net_train, network net_map);
 
 #ifdef __cplusplus
 }

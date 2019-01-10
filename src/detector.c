@@ -1220,7 +1220,7 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
 //#endif // OPENCV
 
 void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
-    float hier_thresh, int dont_show, int ext_output, int save_labels)
+    float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile)
 {
     list *options = read_data_cfg(datacfg);
     char *name_list = option_find_str(options, "names", "data/names.list");
@@ -1244,6 +1244,14 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     double time;
     char buff[256];
     char *input = buff;
+    char *json_buf = NULL;
+    int json_image_id = 0;
+    FILE* json_file = NULL;
+    if (outfile) {
+        json_file = fopen(outfile, "wb");
+        char *tmp = "[\n";
+        fwrite(tmp, sizeof(char), strlen(tmp), json_file);
+    }
     int j;
     float nms = .45;    // 0.4F
     while (1) {
@@ -1256,7 +1264,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
             printf("Enter Image Path: ");
             fflush(stdout);
             input = fgets(input, 256, stdin);
-            if (!input) return;
+            if (!input) break;
             strtok(input, "\n");
         }
         image im = load_image(input, 0, 0, net.c);
@@ -1285,6 +1293,18 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         save_image(im, "predictions");
         if (!dont_show) {
             show_image(im, "predictions");
+        }
+
+        if (outfile) {
+            if (json_buf) {
+                char *tmp = ", \n";
+                fwrite(tmp, sizeof(char), strlen(tmp), json_file);
+            }
+            ++json_image_id;
+            json_buf = detection_to_json(dets, nboxes, l.classes, names, json_image_id, input);
+
+            fwrite(json_buf, sizeof(char), strlen(json_buf), json_file);
+            free(json_buf);
         }
 
         // pseudo labeling concept - fast.ai
@@ -1327,6 +1347,12 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         if (filename) break;
     }
 
+    if (outfile) {
+        char *tmp = "\n]";
+        fwrite(tmp, sizeof(char), strlen(tmp), json_file);
+        fclose(json_file);
+    }
+
     // free memory
     free_ptrs(names, net.layers[net.n - 1].classes);
     free_list_contents_kvp(options);
@@ -1352,6 +1378,7 @@ void run_detector(int argc, char **argv)
     int calc_map = find_arg(argc, argv, "-map");
     check_mistakes = find_arg(argc, argv, "-check_mistakes");
     int http_stream_port = find_int_arg(argc, argv, "-http_port", -1);
+    int json_port = find_int_arg(argc, argv, "-json_port", -1);
     char *out_filename = find_char_arg(argc, argv, "-out_filename", 0);
     char *outfile = find_char_arg(argc, argv, "-out", 0);
     char *prefix = find_char_arg(argc, argv, "-prefix", 0);
@@ -1404,7 +1431,7 @@ void run_detector(int argc, char **argv)
         if (strlen(weights) > 0)
             if (weights[strlen(weights) - 1] == 0x0d) weights[strlen(weights) - 1] = 0;
     char *filename = (argc > 6) ? argv[6] : 0;
-    if (0 == strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels);
+    if (0 == strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels, outfile);
     else if (0 == strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear, dont_show, calc_map);
     else if (0 == strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if (0 == strcmp(argv[2], "recall")) validate_detector_recall(datacfg, cfg, weights);
@@ -1419,7 +1446,7 @@ void run_detector(int argc, char **argv)
             if (strlen(filename) > 0)
                 if (filename[strlen(filename) - 1] == 0x0d) filename[strlen(filename) - 1] = 0;
         demo(cfg, weights, thresh, hier_thresh, cam_index, filename, names, classes, frame_skip, prefix, out_filename,
-            http_stream_port, dont_show, ext_output);
+            http_stream_port, json_port, dont_show, ext_output);
 
         free_list_contents_kvp(options);
         free_list(options);

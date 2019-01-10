@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <assert.h>
+#include "darknet.h"
 #include "network.h"
 #include "image.h"
 #include "data.h"
@@ -31,21 +32,22 @@
 #include "upsample_layer.h"
 #include "parser.h"
 
-network *load_network_custom(char *cfg, char *weights, int clear, int batch)
+load_args get_base_args(network *net)
 {
-    printf(" Try to load cfg: %s, weights: %s, clear = %d \n", cfg, weights, clear);
-    network *net = calloc(1, sizeof(network));
-    *net = parse_network_cfg_custom(cfg, batch);
-    if (weights && weights[0] != 0) {
-        load_weights(net, weights);
-    }
-    if (clear) (*net->seen) = 0;
-    return net;
-}
+    load_args args = { 0 };
+    args.w = net->w;
+    args.h = net->h;
+    args.size = net->w;
 
-network *load_network(char *cfg, char *weights, int clear)
-{
-    return load_network_custom(cfg, weights, clear, 0);
+    args.min = net->min_crop;
+    args.max = net->max_crop;
+    args.angle = net->angle;
+    args.aspect = net->aspect;
+    args.exposure = net->exposure;
+    args.center = net->center;
+    args.saturation = net->saturation;
+    args.hue = net->hue;
+    return args;
 }
 
 int get_current_batch(network net)
@@ -190,6 +192,8 @@ network make_network(int n)
     return net;
 }
 
+double get_time_point();
+
 void forward_network(network net, network_state state)
 {
     state.workspace = net.workspace;
@@ -200,7 +204,9 @@ void forward_network(network net, network_state state)
         if(l.delta){
             scal_cpu(l.outputs * l.batch, 0, l.delta, 1);
         }
+        //double time = get_time_point();
         l.forward(l, state);
+        //printf("%d - Predicted in %lf milli-seconds.\n", i, ((double)get_time_point() - time) / 1000);
         state.input = l.output;
     }
 }
@@ -651,6 +657,59 @@ void free_detections(detection *dets, int n)
     }
     free(dets);
 }
+
+// JSON format:
+//{
+// "frame_id":8990,
+// "objects":[
+//  {"class_id":4, "name":"aeroplane", "relative coordinates":{"center_x":0.398831, "center_y":0.630203, "width":0.057455, "height":0.020396}, "confidence":0.793070},
+//  {"class_id":14, "name":"bird", "relative coordinates":{"center_x":0.398831, "center_y":0.630203, "width":0.057455, "height":0.020396}, "confidence":0.265497}
+// ]
+//},
+
+char *detection_to_json(detection *dets, int nboxes, int classes, char **names, long long int frame_id, char *filename)
+{
+    const float thresh = 0.005; // function get_network_boxes() has already filtred dets by actual threshold
+
+    char *send_buf = (char *)calloc(1024, sizeof(char));
+    if (filename) {
+        sprintf(send_buf, "{\n \"frame_id\":%d, \n \"filename\":\"%s\", \n \"objects\": [ \n", frame_id, filename);
+    }
+    else {
+        sprintf(send_buf, "{\n \"frame_id\":%d, \n \"objects\": [ \n", frame_id);
+    }
+
+    int i, j;
+    int class_id = -1;
+    for (i = 0; i < nboxes; ++i) {
+        for (j = 0; j < classes; ++j) {
+            int show = strncmp(names[j], "dont_show", 9);
+            if (dets[i].prob[j] > thresh && show)
+            {
+                if (class_id != -1) strcat(send_buf, ", \n");
+                class_id = j;
+                char *buf = (char *)calloc(2048, sizeof(char));
+                //sprintf(buf, "{\"image_id\":%d, \"category_id\":%d, \"bbox\":[%f, %f, %f, %f], \"score\":%f}",
+                //    image_id, j, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, dets[i].prob[j]);
+
+                sprintf(buf, "  {\"class_id\":%d, \"name\":\"%s\", \"relative coordinates\":{\"center_x\":%f, \"center_y\":%f, \"width\":%f, \"height\":%f}, \"confidence\":%f}",
+                    j, names[j], dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, dets[i].prob[j]);
+
+                int send_buf_len = strlen(send_buf);
+                int buf_len = strlen(buf);
+                int total_len = send_buf_len + buf_len + 100;
+                send_buf = (char *)realloc(send_buf, total_len * sizeof(char));
+                if (!send_buf) return;// exit(-1);
+                strcat(send_buf, buf);
+                free(buf);
+            }
+        }
+    }
+    //strcat(send_buf, "\n ] \n}, \n");
+    strcat(send_buf, "\n ] \n}");
+    return send_buf;
+}
+
 
 float *network_predict_image(network *net, image im)
 {
